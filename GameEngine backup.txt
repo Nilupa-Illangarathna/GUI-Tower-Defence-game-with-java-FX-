@@ -1,0 +1,261 @@
+// package edu.curtin.saed.assignment1;
+
+// import java.util.Random;
+// import java.util.concurrent.BlockingQueue;
+// import java.util.concurrent.ExecutorService;
+// import java.util.concurrent.Executors;
+// import java.util.concurrent.LinkedBlockingQueue;
+
+// public class GameEngine {
+//     private Logger logger;
+//     private final RobotFactory robotFactory;
+//     private final GameState gameState;
+//     private final int spawnTimer;
+//     private ExecutorService executor;
+//     private final BlockingQueue<FireCommand> firingQueue;
+//     private JFXArena arena;
+//     private final int gridWidth;
+//     private final int gridHeight;
+//     private CustomThreadPoolWrapper threadPoolWrapper;
+
+//     public GameEngine(GameState gameState, Logger logger, int spawnTimer, JFXArena arena, int gridHeight, int gridWidth) {
+//         this.logger = logger;
+//         this.robotFactory = new RobotFactory(arena, threadPoolWrapper);
+//         this.spawnTimer = spawnTimer;
+//         this.gameState = gameState;
+//         firingQueue = new LinkedBlockingQueue<>();
+//         gameState.attachEndGameListener(this::endGame);
+//         this.arena = arena;
+//         this.gridHeight = gridHeight;
+//         this.gridWidth = gridWidth;
+//     }
+
+//     public void startGame() {
+//         try {
+//             if (!gameState.isGameFinished())
+//                 return; // guard to stop multiple starts
+
+//             Thread.sleep(1000); // initial wait to give the player time to react
+
+//             executor = Executors.newCachedThreadPool();
+//             gameState.setGameStart();
+
+//             executor.execute(robotFactory);
+
+//             // Create and start threads for each corner
+            // Thread topLeftThread = createSpawnThread(new GridPosition(0, 0));
+            // Thread topRightThread = createSpawnThread(new GridPosition(gridWidth - 1, 0));
+            // Thread bottomLeftThread = createSpawnThread(new GridPosition(0, gridHeight - 1));
+            // Thread bottomRightThread = createSpawnThread(new GridPosition(gridWidth - 1, gridHeight - 1));
+
+//             topLeftThread.start();
+//             topRightThread.start();
+//             bottomLeftThread.start();
+//             bottomRightThread.start();
+
+//             executor.execute(this::scoreOverTimeCounter);
+//         } catch (InterruptedException e) {
+//             System.out.println("Game Engine Interrupted, shutting down");
+//         }
+//     }
+
+//     private Thread createSpawnThread(GridPosition spawnPosition) {
+//         return new Thread(() -> {
+//             Random random = new Random();
+//             while (!gameState.isGameFinished()) {
+//                 if (gameState.isValidSpawnPositions()) {
+//                     // Check if this thread should spawn a robot during this cycle
+//                     if (random.nextInt(4) == 0) {
+//                         Robot robot;
+//                         try {
+//                             robot = robotFactory.getNextRobot();
+//                             robot.setGridPosition(spawnPosition);
+//                             robot.attachGameState(gameState);
+//                             gameState.spawnRobot(robot);
+//                             gameState.spawnRobot(robot);
+//                             executor.execute(robot);
+//                             logger.log("Robot" + robot.getRobotId() + " Spawned: " + spawnPosition.toString());
+//                         } catch (InterruptedException e) {
+//                             e.printStackTrace();
+//                         }
+//                     }
+//                 }
+//                 try {
+//                     Thread.sleep(spawnTimer);
+//                 } catch (InterruptedException e) {
+//                     System.out.println("Spawning stopped");
+//                 }
+//             }
+//         });
+//     }
+
+//     private void scoreOverTimeCounter() {
+//         try {
+//             while (!gameState.isGameFinished()) {
+//                 Thread.sleep(1000);
+//                 int score = gameState.getScore() + 10;
+//                 gameState.setScore(score);
+//             }
+//         } catch (InterruptedException e) {
+//             System.out.println("Score Counter Stopped");
+//         }
+//     }
+
+//     private void endGame() {
+//         // Stop all threads and clean up
+//         executor.shutdownNow();
+//         logger.log("\n====================");
+//         logger.log("\n\tGAME OVER");
+//         logger.log("\n\tFinal Score: " + String.valueOf(gameState.getScore()));
+//         logger.log("\n====================");
+//         // TODO: CLEANUP THREADS NICELY
+//     }
+
+//     public void passFiringCoords(int x, int y, long fireTime) {
+//         try {
+//             if (!gameState.isGameFinished()) {
+//                 GridPosition gridPosition = new GridPosition(x, y);
+//                 FireCommand fireCommand = new FireCommand(gridPosition, fireTime);
+//                 logger.log("Player Fired: " + gridPosition.toString());
+//                 firingQueue.put(fireCommand);
+//             }
+//         } catch (InterruptedException e) {
+//             System.out.println("Firing command queue Interrupted");
+//         }
+//     }
+// }
+
+
+package edu.curtin.saed.assignment1;
+
+import java.util.Random;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.locks.ReentrantLock;
+
+public class GameEngine {
+    private Logger logger;
+    private final RobotFactory robotFactory;
+    private final GameState gameState;
+    private final int spawnTimer;
+    private ExecutorService executor;
+    private final BlockingQueue<FireCommand> firingQueue;
+    private JFXArena arena;
+    private final int gridWidth;
+    private final int gridHeight;
+    private CustomThreadPoolWrapper threadPoolWrapper;
+
+    // Add a lock for synchronization
+    private final ReentrantLock robotCreationLock = new ReentrantLock();
+
+    public GameEngine(GameState gameState, Logger logger, int spawnTimer, JFXArena arena, int gridHeight, int gridWidth) {
+        this.logger = logger;
+        this.robotFactory = new RobotFactory(arena, threadPoolWrapper);
+        this.spawnTimer = spawnTimer;
+        this.gameState = gameState;
+        firingQueue = new LinkedBlockingQueue<>();
+        gameState.attachEndGameListener(this::endGame);
+        this.arena = arena;
+        this.gridHeight = gridHeight;
+        this.gridWidth = gridWidth;
+    }
+
+    public void startGame() {
+        try {
+            if (!gameState.isGameFinished())
+                return; // guard to stop multiple starts
+
+            Thread.sleep(1000); // initial wait to give the player time to react
+
+            executor = Executors.newCachedThreadPool();
+            gameState.setGameStart();
+
+            executor.execute(robotFactory);
+
+            // Create and start threads for each corner
+            Thread topLeftThread = createSpawnThread(new GridPosition(0, 0));
+            Thread topRightThread = createSpawnThread(new GridPosition(gridWidth - 1, 0));
+            Thread bottomLeftThread = createSpawnThread(new GridPosition(0, gridHeight - 1));
+            Thread bottomRightThread = createSpawnThread(new GridPosition(gridWidth - 1, gridHeight - 1));
+
+            topLeftThread.start();
+            topRightThread.start();
+            bottomLeftThread.start();
+            bottomRightThread.start();
+
+            executor.execute(this::scoreOverTimeCounter);
+        } catch (InterruptedException e) {
+            System.out.println("Game Engine Interrupted, shutting down");
+        }
+    }
+
+    private Thread createSpawnThread(GridPosition spawnPosition) {
+        return new Thread(() -> {
+            Random random = new Random();
+            while (!gameState.isGameFinished()) {
+                if (gameState.isValidSpawnPositions()) {
+                    // Check if this thread should spawn a robot during this cycle
+                    if (random.nextInt(4) == 0) {
+                        Robot robot;
+                        try {
+                            robotCreationLock.lock(); // Acquire the lock
+                            robot = robotFactory.getNextRobot();
+                            robot.setGridPosition(spawnPosition);
+                            robot.attachGameState(gameState);
+                            gameState.spawnRobot(robot);
+                            gameState.spawnRobot(robot);
+                            executor.execute(robot);
+                            logger.log("Robot" + robot.getRobotId() + " Spawned: " + spawnPosition.toString());
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        } finally {
+                            robotCreationLock.unlock(); // Release the lock
+                        }
+                    }
+                }
+                try {
+                    Thread.sleep(spawnTimer);
+                } catch (InterruptedException e) {
+                    System.out.println("Spawning stopped");
+                }
+            }
+        });
+    }
+
+    private void scoreOverTimeCounter() {
+        try {
+            while (!gameState.isGameFinished()) {
+                Thread.sleep(1000);
+                int score = gameState.getScore() + 10;
+                gameState.setScore(score);
+            }
+        } catch (InterruptedException e) {
+            System.out.println("Score Counter Stopped");
+        }
+    }
+
+    private void endGame() {
+        // Stop all threads and clean up
+        executor.shutdownNow();
+        logger.log("\n====================");
+        logger.log("\n\tGAME OVER");
+        logger.log("\n\tFinal Score: " + String.valueOf(gameState.getScore()));
+        logger.log("\n====================");
+        // TODO: CLEANUP THREADS NICELY
+    }
+
+    public void passFiringCoords(int x, int y, long fireTime) {
+        try {
+            if (!gameState.isGameFinished()) {
+                GridPosition gridPosition = new GridPosition(x, y);
+                FireCommand fireCommand = new FireCommand(gridPosition, fireTime);
+                logger.log("Player Fired: " + gridPosition.toString());
+                firingQueue.put(fireCommand);
+            }
+        } catch (InterruptedException e) {
+            System.out.println("Firing command queue Interrupted");
+        }
+    }
+}
